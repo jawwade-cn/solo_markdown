@@ -60,7 +60,10 @@ function insertFormat(format) {
     const end = editor.selectionEnd;
     const selectedText = editor.value.substring(start, end);
     
-    const scrollTop = editor.scrollTop;
+    const editorScrollTop = editor.scrollTop;
+    
+    const previewContent = document.querySelector('.preview-content');
+    const previewScrollTop = previewContent ? previewContent.scrollTop : 0;
 
     let insertText;
     if (action.text) {
@@ -82,12 +85,25 @@ function insertFormat(format) {
 
     editor.value = newValue;
     
-    editor.scrollTop = scrollTop;
+    editor.scrollTop = editorScrollTop;
     
-    editor.focus();
     editor.setSelectionRange(newSelectionStart, newSelectionEnd);
+    
+    renderMarkdownWithScrollRestore(editor.value, previewScrollTop);
+    
+    updateStatus(editor.value);
+}
 
-    updatePreview();
+function renderMarkdownWithScrollRestore(text, savedScrollTop) {
+    const previewContent = document.querySelector('.preview-content');
+    
+    renderMarkdown(text);
+    
+    if (previewContent && savedScrollTop !== undefined) {
+        requestAnimationFrame(() => {
+            previewContent.scrollTop = savedScrollTop;
+        });
+    }
 }
 
 function streamRender(text, speed = 20) {
