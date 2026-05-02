@@ -48,21 +48,28 @@ const formatActions = {
     hr: { prefix: '---\n', suffix: '', placeholder: '' }
 };
 
-if (typeof marked !== 'undefined') {
-    marked.setOptions({
-        breaks: true,
-        highlight: function(code, lang) {
-            if (typeof hljs !== 'undefined' && lang && hljs.getLanguage(lang)) {
-                try {
-                    return hljs.highlight(code, { language: lang }).value;
-                } catch (e) {
-                    return code;
+function initMarked() {
+    if (typeof marked !== 'undefined') {
+        marked.setOptions({
+            breaks: true,
+            highlight: function(code, lang) {
+                if (typeof hljs !== 'undefined') {
+                    if (lang && hljs.getLanguage(lang)) {
+                        try {
+                            return hljs.highlight(code, { language: lang }).value;
+                        } catch (e) {
+                            console.warn('Highlight error in marked:', e);
+                            return code;
+                        }
+                    }
                 }
+                return code;
             }
-            return code;
-        }
-    });
+        });
+    }
 }
+
+initMarked();
 
 function updatePreview() {
     const text = editor.value;
@@ -75,16 +82,40 @@ function updatePreview() {
     renderMarkdown(text);
 }
 
+function applySyntaxHighlighting() {
+    if (typeof hljs === 'undefined') {
+        return;
+    }
+    
+    const codeBlocks = preview.querySelectorAll('pre code');
+    
+    codeBlocks.forEach((block) => {
+        if (!block.classList.contains('hljs')) {
+            try {
+                const langClass = Array.from(block.classList).find(c => c.startsWith('language-'));
+                const lang = langClass ? langClass.replace('language-', '') : null;
+                
+                if (lang && hljs.getLanguage(lang)) {
+                    const highlighted = hljs.highlight(block.textContent, { language: lang }).value;
+                    block.innerHTML = highlighted;
+                    block.classList.add('hljs');
+                } else {
+                    hljs.highlightElement(block);
+                }
+            } catch (e) {
+                console.warn('Highlight error:', e);
+            }
+        }
+    });
+}
+
 function renderMarkdown(text) {
     if (typeof marked !== 'undefined') {
         preview.innerHTML = marked.parse(text);
         
         if (typeof hljs !== 'undefined') {
-            const codeBlocks = preview.querySelectorAll('pre code');
-            codeBlocks.forEach((block) => {
-                if (!block.classList.contains('hljs')) {
-                    hljs.highlightElement(block);
-                }
+            requestAnimationFrame(() => {
+                applySyntaxHighlighting();
             });
         }
     } else {
