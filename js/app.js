@@ -8,27 +8,61 @@ const fileInput = document.getElementById('file-input');
 const streamModeCheckbox = document.getElementById('stream-mode');
 const wordCount = document.getElementById('word-count');
 const lineCount = document.getElementById('line-count');
-const formatBtns = document.querySelectorAll('.format-btn');
+const formatBtns = document.querySelectorAll('.format-btn[data-format]');
+
+const headingBtn = document.getElementById('heading-btn');
+const headingMenu = document.getElementById('heading-menu');
+const headingItems = document.querySelectorAll('.dropdown-item[data-heading]');
+
+const codeBtn = document.getElementById('code-btn');
+const codeMenu = document.getElementById('code-menu');
+const codeItems = document.querySelectorAll('.dropdown-item[data-code]');
+
+const tableBtn = document.getElementById('table-btn');
+const modalOverlay = document.getElementById('modal-overlay');
+
+const codeBlockModal = document.getElementById('code-block-modal');
+const codeBlockClose = document.getElementById('code-block-close');
+const codeBlockCancel = document.getElementById('code-block-cancel');
+const codeBlockConfirm = document.getElementById('code-block-confirm');
+const codeLanguage = document.getElementById('code-language');
+
+const tableModal = document.getElementById('table-modal');
+const tableClose = document.getElementById('table-close');
+const tableCancel = document.getElementById('table-cancel');
+const tableConfirm = document.getElementById('table-confirm');
+const tableRows = document.getElementById('table-rows');
+const tableCols = document.getElementById('table-cols');
 
 let streamTimer = null;
 let currentStreamText = '';
 let isStreaming = false;
+let currentDropdown = null;
 
 const formatActions = {
     bold: { prefix: '**', suffix: '**', placeholder: '粗体文本' },
     italic: { prefix: '*', suffix: '*', placeholder: '斜体文本' },
-    heading: { prefix: '## ', suffix: '', placeholder: '二级标题' },
     link: { prefix: '[', suffix: '](url)', placeholder: '链接文字' },
-    code: { prefix: '`', suffix: '`', placeholder: '代码' },
     quote: { prefix: '> ', suffix: '', placeholder: '引用文本' },
     list: { prefix: '- ', suffix: '', placeholder: '列表项' },
-    table: {
-        prefix: '',
-        suffix: '',
-        text: '| 表头1 | 表头2 | 表头3 |\n| --- | --- | --- |\n| 内容1 | 内容2 | 内容3 |\n'
-    },
     hr: { prefix: '---\n', suffix: '', placeholder: '' }
 };
+
+if (typeof marked !== 'undefined') {
+    marked.setOptions({
+        breaks: true,
+        highlight: function(code, lang) {
+            if (typeof hljs !== 'undefined' && lang && hljs.getLanguage(lang)) {
+                try {
+                    return hljs.highlight(code, { language: lang }).value;
+                } catch (e) {
+                    return code;
+                }
+            }
+            return code;
+        }
+    });
+}
 
 function updatePreview() {
     const text = editor.value;
@@ -43,7 +77,7 @@ function updatePreview() {
 
 function renderMarkdown(text) {
     if (typeof marked !== 'undefined') {
-        preview.innerHTML = marked.parse(text, { breaks: true });
+        preview.innerHTML = marked.parse(text);
     } else {
         preview.textContent = text;
     }
@@ -54,8 +88,14 @@ function updateStatus(text) {
     lineCount.textContent = `行数: ${text.split('\n').length}`;
 }
 
-function insertFormat(format) {
+function insertFormat(format, customPrefix = null, customSuffix = null, customPlaceholder = null) {
     const action = formatActions[format];
+    if (!action && !customPrefix) return;
+
+    const prefix = customPrefix || action.prefix;
+    const suffix = customSuffix || action.suffix;
+    const placeholder = customPlaceholder || (action ? action.placeholder : '');
+
     const start = editor.selectionStart;
     const end = editor.selectionEnd;
     const selectedText = editor.value.substring(start, end);
@@ -65,33 +105,109 @@ function insertFormat(format) {
     const previewContent = document.querySelector('.preview-content');
     const previewScrollTop = previewContent ? previewContent.scrollTop : 0;
 
-    let insertText;
-    if (action.text) {
-        insertText = action.text;
-    } else {
-        insertText = action.prefix + (selectedText || action.placeholder) + action.suffix;
-    }
+    const insertText = prefix + (selectedText || placeholder) + suffix;
 
     const newValue = editor.value.substring(0, start) + insertText + editor.value.substring(end);
     
     let newSelectionStart, newSelectionEnd;
     if (selectedText) {
-        newSelectionStart = start + action.prefix.length;
-        newSelectionEnd = start + action.prefix.length + selectedText.length;
+        newSelectionStart = start + prefix.length;
+        newSelectionEnd = start + prefix.length + selectedText.length;
     } else {
-        newSelectionStart = start + action.prefix.length;
-        newSelectionEnd = start + action.prefix.length + action.placeholder.length;
+        newSelectionStart = start + prefix.length;
+        newSelectionEnd = start + prefix.length + placeholder.length;
     }
 
     editor.value = newValue;
     
     editor.scrollTop = editorScrollTop;
     
+    editor.focus();
     editor.setSelectionRange(newSelectionStart, newSelectionEnd);
     
     renderMarkdownWithScrollRestore(editor.value, previewScrollTop);
     
     updateStatus(editor.value);
+}
+
+function insertTextAtCursor(text, selectStart = 0, selectEnd = null) {
+    const start = editor.selectionStart;
+    const end = editor.selectionEnd;
+    
+    const editorScrollTop = editor.scrollTop;
+    const previewContent = document.querySelector('.preview-content');
+    const previewScrollTop = previewContent ? previewContent.scrollTop : 0;
+
+    const newValue = editor.value.substring(0, start) + text + editor.value.substring(end);
+    
+    const newSelectionStart = start + selectStart;
+    const newSelectionEnd = start + (selectEnd !== null ? selectEnd : text.length);
+
+    editor.value = newValue;
+    editor.scrollTop = editorScrollTop;
+    
+    editor.focus();
+    editor.setSelectionRange(newSelectionStart, newSelectionEnd);
+    
+    renderMarkdownWithScrollRestore(editor.value, previewScrollTop);
+    updateStatus(editor.value);
+}
+
+function insertHeading(level) {
+    const prefix = '#'.repeat(level) + ' ';
+    const placeholder = `H${level} 标题`;
+    insertFormat('bold', prefix, '', placeholder);
+    closeDropdown();
+}
+
+function insertInlineCode() {
+    insertFormat('bold', '`', '`', '代码');
+    closeDropdown();
+}
+
+function openCodeBlockModal() {
+    closeDropdown();
+    showModal(codeBlockModal);
+}
+
+function insertCodeBlock(language) {
+    const langStr = language || '';
+    const codeBlock = `\`\`\`${langStr}\n// 在此输入代码\n\`\`\`\n`;
+    const selectStart = langStr.length + 4;
+    const selectEnd = selectStart + 10;
+    insertTextAtCursor(codeBlock, selectStart, selectEnd);
+}
+
+function openTableModal() {
+    showModal(tableModal);
+}
+
+function generateTable(rows, cols) {
+    let table = '';
+    
+    for (let i = 0; i < cols; i++) {
+        table += `| 表头${i + 1} `;
+    }
+    table += '|\n';
+    
+    for (let i = 0; i < cols; i++) {
+        table += '| --- ';
+    }
+    table += '|\n';
+    
+    for (let r = 0; r < rows - 1; r++) {
+        for (let c = 0; c < cols; c++) {
+            table += `| 内容${r + 1}-${c + 1} `;
+        }
+        table += '|\n';
+    }
+    
+    return table;
+}
+
+function insertTable(rows, cols) {
+    const table = generateTable(rows, cols);
+    insertTextAtCursor(table, 0, 0);
 }
 
 function renderMarkdownWithScrollRestore(text, savedScrollTop) {
@@ -232,6 +348,34 @@ function helloWorld() {
     }
 }
 
+function toggleDropdown(menu) {
+    if (currentDropdown === menu) {
+        closeDropdown();
+    } else {
+        closeDropdown();
+        menu.classList.add('show');
+        currentDropdown = menu;
+    }
+}
+
+function closeDropdown() {
+    if (currentDropdown) {
+        currentDropdown.classList.remove('show');
+        currentDropdown = null;
+    }
+}
+
+function showModal(modal) {
+    modalOverlay.classList.add('show');
+    modal.classList.add('show');
+}
+
+function hideModal() {
+    modalOverlay.classList.remove('show');
+    codeBlockModal.classList.remove('show');
+    tableModal.classList.remove('show');
+}
+
 editor.addEventListener('input', () => {
     stopStreaming();
     updatePreview();
@@ -240,8 +384,71 @@ editor.addEventListener('input', () => {
 formatBtns.forEach(btn => {
     btn.addEventListener('click', () => {
         const format = btn.dataset.format;
-        insertFormat(format);
+        if (format && formatActions[format]) {
+            insertFormat(format);
+        }
     });
+});
+
+headingBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleDropdown(headingMenu);
+});
+
+headingItems.forEach(item => {
+    item.addEventListener('click', () => {
+        const level = parseInt(item.dataset.heading);
+        insertHeading(level);
+    });
+});
+
+codeBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleDropdown(codeMenu);
+});
+
+codeItems.forEach(item => {
+    item.addEventListener('click', () => {
+        const codeType = item.dataset.code;
+        if (codeType === 'inline') {
+            insertInlineCode();
+        } else if (codeType === 'block') {
+            openCodeBlockModal();
+        }
+    });
+});
+
+tableBtn.addEventListener('click', () => {
+    openTableModal();
+});
+
+codeBlockClose.addEventListener('click', hideModal);
+codeBlockCancel.addEventListener('click', hideModal);
+codeBlockConfirm.addEventListener('click', () => {
+    const language = codeLanguage.value;
+    insertCodeBlock(language);
+    hideModal();
+});
+
+tableClose.addEventListener('click', hideModal);
+tableCancel.addEventListener('click', hideModal);
+tableConfirm.addEventListener('click', () => {
+    const rows = parseInt(tableRows.value) || 3;
+    const cols = parseInt(tableCols.value) || 3;
+    insertTable(rows, cols);
+    hideModal();
+});
+
+modalOverlay.addEventListener('click', (e) => {
+    if (e.target === modalOverlay) {
+        hideModal();
+    }
+});
+
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('.dropdown')) {
+        closeDropdown();
+    }
 });
 
 uploadBtn.addEventListener('click', () => {

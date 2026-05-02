@@ -5,6 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Markdown编辑器</title>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/core.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/javascript.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/python.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/java.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/css.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/html.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/json.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/sql.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/languages/bash.min.js"></script>
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -36,12 +46,28 @@
             <div class="format-toolbar">
                 <button class="format-btn" data-format="bold">粗体</button>
                 <button class="format-btn" data-format="italic">斜体</button>
-                <button class="format-btn" data-format="heading">标题</button>
+                <div class="dropdown">
+                    <button class="format-btn dropdown-toggle" id="heading-btn">标题 ▼</button>
+                    <div class="dropdown-menu" id="heading-menu">
+                        <button class="dropdown-item" data-heading="1">H1 一级标题</button>
+                        <button class="dropdown-item" data-heading="2">H2 二级标题</button>
+                        <button class="dropdown-item" data-heading="3">H3 三级标题</button>
+                        <button class="dropdown-item" data-heading="4">H4 四级标题</button>
+                        <button class="dropdown-item" data-heading="5">H5 五级标题</button>
+                        <button class="dropdown-item" data-heading="6">H6 六级标题</button>
+                    </div>
+                </div>
                 <button class="format-btn" data-format="link">链接</button>
-                <button class="format-btn" data-format="code">代码</button>
+                <div class="dropdown">
+                    <button class="format-btn dropdown-toggle" id="code-btn">代码 ▼</button>
+                    <div class="dropdown-menu" id="code-menu">
+                        <button class="dropdown-item" data-code="inline">行内代码</button>
+                        <button class="dropdown-item" data-code="block">代码块</button>
+                    </div>
+                </div>
                 <button class="format-btn" data-format="quote">引用</button>
                 <button class="format-btn" data-format="list">列表</button>
-                <button class="format-btn" data-format="table">表格</button>
+                <button class="format-btn" data-format="table" id="table-btn">表格</button>
                 <button class="format-btn" data-format="hr">分割线</button>
             </div>
             <div class="editor-content">
@@ -68,6 +94,56 @@
     <div class="status-bar">
         <span id="word-count">字数: 0</span>
         <span id="line-count">行数: 0</span>
+    </div>
+
+    <div class="modal-overlay" id="modal-overlay">
+        <div class="modal" id="code-block-modal">
+            <div class="modal-header">
+                <h3>插入代码块</h3>
+                <button class="modal-close" id="code-block-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="code-language">选择语言：</label>
+                    <select id="code-language">
+                        <option value="">纯文本</option>
+                        <option value="javascript">JavaScript</option>
+                        <option value="python">Python</option>
+                        <option value="java">Java</option>
+                        <option value="html">HTML</option>
+                        <option value="css">CSS</option>
+                        <option value="json">JSON</option>
+                        <option value="sql">SQL</option>
+                        <option value="bash">Bash</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="code-block-cancel">取消</button>
+                <button class="btn btn-primary" id="code-block-confirm">插入</button>
+            </div>
+        </div>
+
+        <div class="modal" id="table-modal">
+            <div class="modal-header">
+                <h3>插入表格</h3>
+                <button class="modal-close" id="table-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="table-rows">行数：</label>
+                    <input type="number" id="table-rows" min="1" max="20" value="3">
+                </div>
+                <div class="form-group">
+                    <label for="table-cols">列数：</label>
+                    <input type="number" id="table-cols" min="1" max="10" value="3">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="table-cancel">取消</button>
+                <button class="btn btn-primary" id="table-confirm">插入</button>
+            </div>
+        </div>
     </div>
 
     <script src="js/app.js"></script>
