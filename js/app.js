@@ -78,6 +78,15 @@ function updatePreview() {
 function renderMarkdown(text) {
     if (typeof marked !== 'undefined') {
         preview.innerHTML = marked.parse(text);
+        
+        if (typeof hljs !== 'undefined') {
+            const codeBlocks = preview.querySelectorAll('pre code');
+            codeBlocks.forEach((block) => {
+                if (!block.classList.contains('hljs')) {
+                    hljs.highlightElement(block);
+                }
+            });
+        }
     } else {
         preview.textContent = text;
     }
@@ -88,17 +97,81 @@ function updateStatus(text) {
     lineCount.textContent = `行数: ${text.split('\n').length}`;
 }
 
+let undoStack = [];
+let redoStack = [];
+let isUndoing = false;
+
+function saveUndoState() {
+    if (!isUndoing) {
+        undoStack.push({
+            value: editor.value,
+            selectionStart: editor.selectionStart,
+            selectionEnd: editor.selectionEnd
+        });
+        redoStack = [];
+        if (undoStack.length > 50) {
+            undoStack.shift();
+        }
+    }
+}
+
+function executeUndo() {
+    if (undoStack.length > 0) {
+        isUndoing = true;
+        const currentState = {
+            value: editor.value,
+            selectionStart: editor.selectionStart,
+            selectionEnd: editor.selectionEnd
+        };
+        const prevState = undoStack.pop();
+        redoStack.push(currentState);
+        
+        editor.value = prevState.value;
+        editor.setSelectionRange(prevState.selectionStart, prevState.selectionEnd);
+        if (document.activeElement !== editor) {
+            editor.focus({ preventScroll: true });
+        }
+        updatePreview();
+        updateStatus(editor.value);
+        isUndoing = false;
+    }
+}
+
+function executeRedo() {
+    if (redoStack.length > 0) {
+        isUndoing = true;
+        const currentState = {
+            value: editor.value,
+            selectionStart: editor.selectionStart,
+            selectionEnd: editor.selectionEnd
+        };
+        const nextState = redoStack.pop();
+        undoStack.push(currentState);
+        
+        editor.value = nextState.value;
+        editor.setSelectionRange(nextState.selectionStart, nextState.selectionEnd);
+        if (document.activeElement !== editor) {
+            editor.focus({ preventScroll: true });
+        }
+        updatePreview();
+        updateStatus(editor.value);
+        isUndoing = false;
+    }
+}
+
 function insertFormat(format, customPrefix = null, customSuffix = null, customPlaceholder = null) {
     const action = formatActions[format];
     if (!action && !customPrefix) return;
 
-    const prefix = customPrefix || action.prefix;
-    const suffix = customSuffix || action.suffix;
-    const placeholder = customPlaceholder || (action ? action.placeholder : '');
+    const prefix = customPrefix !== null ? customPrefix : (action ? action.prefix : '');
+    const suffix = customSuffix !== null ? customSuffix : (action ? action.suffix : '');
+    const placeholder = customPlaceholder !== null ? customPlaceholder : (action ? action.placeholder : '');
 
     const start = editor.selectionStart;
     const end = editor.selectionEnd;
     const selectedText = editor.value.substring(start, end);
+    
+    saveUndoState();
     
     const editorScrollTop = editor.scrollTop;
     
@@ -120,10 +193,12 @@ function insertFormat(format, customPrefix = null, customSuffix = null, customPl
 
     editor.value = newValue;
     
+    editor.setSelectionRange(newSelectionStart, newSelectionEnd);
     editor.scrollTop = editorScrollTop;
     
-    editor.focus();
-    editor.setSelectionRange(newSelectionStart, newSelectionEnd);
+    if (document.activeElement !== editor) {
+        editor.focus({ preventScroll: true });
+    }
     
     renderMarkdownWithScrollRestore(editor.value, previewScrollTop);
     
@@ -133,6 +208,8 @@ function insertFormat(format, customPrefix = null, customSuffix = null, customPl
 function insertTextAtCursor(text, selectStart = 0, selectEnd = null) {
     const start = editor.selectionStart;
     const end = editor.selectionEnd;
+    
+    saveUndoState();
     
     const editorScrollTop = editor.scrollTop;
     const previewContent = document.querySelector('.preview-content');
@@ -144,13 +221,30 @@ function insertTextAtCursor(text, selectStart = 0, selectEnd = null) {
     const newSelectionEnd = start + (selectEnd !== null ? selectEnd : text.length);
 
     editor.value = newValue;
+    editor.setSelectionRange(newSelectionStart, newSelectionEnd);
     editor.scrollTop = editorScrollTop;
     
-    editor.focus();
-    editor.setSelectionRange(newSelectionStart, newSelectionEnd);
+    if (document.activeElement !== editor) {
+        editor.focus({ preventScroll: true });
+    }
     
     renderMarkdownWithScrollRestore(editor.value, previewScrollTop);
     updateStatus(editor.value);
+}
+
+const languageComments = {
+    javascript: '//',
+    python: '#',
+    java: '//',
+    html: '<!--',
+    css: '/*',
+    json: '//',
+    sql: '--',
+    bash: '#'
+};
+
+function getCommentPrefix(language) {
+    return languageComments[language] || '//';
 }
 
 function insertHeading(level) {
@@ -172,9 +266,24 @@ function openCodeBlockModal() {
 
 function insertCodeBlock(language) {
     const langStr = language || '';
-    const codeBlock = `\`\`\`${langStr}\n// 在此输入代码\n\`\`\`\n`;
+    let commentText = '';
+    let commentEnd = '';
+    
+    const prefix = getCommentPrefix(language);
+    if (language === 'html') {
+        commentText = '<!-- 在此输入HTML -->';
+        commentEnd = ' -->';
+    } else if (language === 'css') {
+        commentText = '/* 在此输入CSS */';
+        commentEnd = ' */';
+    } else {
+        commentText = `${prefix} 在此输入代码`;
+        commentEnd = '';
+    }
+    
+    const codeBlock = `\`\`\`${langStr}\n${commentText}\n\`\`\`\n`;
     const selectStart = langStr.length + 4;
-    const selectEnd = selectStart + 10;
+    const selectEnd = selectStart + commentText.length - commentEnd.length;
     insertTextAtCursor(codeBlock, selectStart, selectEnd);
 }
 
@@ -281,6 +390,7 @@ function downloadFile() {
 function clearEditor() {
     if (confirm('确定要清空内容吗？')) {
         stopStreaming();
+        saveUndoState();
         editor.value = '';
         preview.innerHTML = '';
         updateStatus('');
@@ -289,6 +399,7 @@ function clearEditor() {
 
 function runStreamDemo() {
     stopStreaming();
+    saveUndoState();
 
     const demoContent = `# Markdown编辑器
 
@@ -381,8 +492,24 @@ editor.addEventListener('input', () => {
     updatePreview();
 });
 
+editor.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) {
+            executeRedo();
+        } else {
+            executeUndo();
+        }
+    } else if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+        e.preventDefault();
+        executeRedo();
+    }
+});
+
 formatBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
         const format = btn.dataset.format;
         if (format && formatActions[format]) {
             insertFormat(format);
@@ -391,24 +518,30 @@ formatBtns.forEach(btn => {
 });
 
 headingBtn.addEventListener('click', (e) => {
+    e.preventDefault();
     e.stopPropagation();
     toggleDropdown(headingMenu);
 });
 
 headingItems.forEach(item => {
-    item.addEventListener('click', () => {
+    item.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
         const level = parseInt(item.dataset.heading);
         insertHeading(level);
     });
 });
 
 codeBtn.addEventListener('click', (e) => {
+    e.preventDefault();
     e.stopPropagation();
     toggleDropdown(codeMenu);
 });
 
 codeItems.forEach(item => {
-    item.addEventListener('click', () => {
+    item.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
         const codeType = item.dataset.code;
         if (codeType === 'inline') {
             insertInlineCode();
@@ -418,21 +551,43 @@ codeItems.forEach(item => {
     });
 });
 
-tableBtn.addEventListener('click', () => {
+tableBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
     openTableModal();
 });
 
-codeBlockClose.addEventListener('click', hideModal);
-codeBlockCancel.addEventListener('click', hideModal);
-codeBlockConfirm.addEventListener('click', () => {
+codeBlockClose.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    hideModal();
+});
+codeBlockCancel.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    hideModal();
+});
+codeBlockConfirm.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
     const language = codeLanguage.value;
     insertCodeBlock(language);
     hideModal();
 });
 
-tableClose.addEventListener('click', hideModal);
-tableCancel.addEventListener('click', hideModal);
-tableConfirm.addEventListener('click', () => {
+tableClose.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    hideModal();
+});
+tableCancel.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    hideModal();
+});
+tableConfirm.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
     const rows = parseInt(tableRows.value) || 3;
     const cols = parseInt(tableCols.value) || 3;
     insertTable(rows, cols);
@@ -451,7 +606,9 @@ document.addEventListener('click', (e) => {
     }
 });
 
-uploadBtn.addEventListener('click', () => {
+uploadBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
     fileInput.click();
 });
 
@@ -461,6 +618,7 @@ fileInput.addEventListener('change', (e) => {
         const reader = new FileReader();
         reader.onload = (event) => {
             stopStreaming();
+            saveUndoState();
             editor.value = event.target.result;
             updatePreview();
         };
@@ -469,9 +627,21 @@ fileInput.addEventListener('change', (e) => {
     fileInput.value = '';
 });
 
-downloadBtn.addEventListener('click', downloadFile);
-clearBtn.addEventListener('click', clearEditor);
-streamDemoBtn.addEventListener('click', runStreamDemo);
+downloadBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    downloadFile();
+});
+clearBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    clearEditor();
+});
+streamDemoBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    runStreamDemo();
+});
 
 streamModeCheckbox.addEventListener('change', () => {
     if (!streamModeCheckbox.checked) {
